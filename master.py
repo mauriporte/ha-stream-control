@@ -4,12 +4,15 @@
 # GET /streams -> {"on", "streams": {ip: {"src", "video"}}} for the adb-control viewer (/view?mode=stream).
 # No token (LAN only, like the ADB viewer): GET /play?src= is one stream's player page, POST /webrtc?src= its
 # WebRTC offer, passed on to go2rtc with go2rtc's own login.
+# GET /ws?src= (WebSocket) is go2rtc's MSE stream, the player's fallback when WebRTC cannot connect.
 # Requests need the X-Token header (env ADB_CONTROL_TOKEN, the same key as the adb-control service).
 import base64
 import json
 import os
 import re
+import socket
 import subprocess
+import threading
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -45,22 +48,49 @@ background:#000a;color:#fff;cursor:pointer}</style></head><body>
 // browsers only autoplay muted video: the button (a user gesture) turns the sound on and off
 const v=document.getElementById("v"), snd=document.getElementById("snd"), src=new URLSearchParams(location.search).get("src");
 snd.onclick=()=>{v.muted=!v.muted; snd.innerHTML=v.muted?"&#128263;":"&#128266;"; v.play();};
-async function start(){
- const pc=new RTCPeerConnection();
+// nested in Home Assistant's iframe card, autoplay alone may not start: keep asking until the video plays
+setInterval(()=>{if(v.paused && (v.srcObject||v.src)) v.play().catch(()=>{});},1000);
+// Paths are relative, so the page also works behind ADB Control's /stream/ proxy (remote access over https).
+// WebRTC first (lowest delay). If it never connects (from outside there is no route for its media), MSE over a
+// WebSocket, which goes through the https tunnel too.
+function webrtc(){
+ const pc=new RTCPeerConnection(); let ok=false, done=false;
+ const fail=()=>{if(done)return; done=true; clearTimeout(t); pc.close(); if(ok) setTimeout(webrtc,2000); else mse();};
+ const t=setTimeout(()=>{if(!ok) fail();},8000);
  pc.addTransceiver("video",{direction:"recvonly"}); pc.addTransceiver("audio",{direction:"recvonly"});
  const ms=new MediaStream(); pc.ontrack=e=>{ms.addTrack(e.track); v.srcObject=ms; v.play().catch(()=>{});};
- // nested in Home Assistant's iframe card, autoplay alone may not start: retry until the video plays
- const kick=setInterval(()=>{if(v.paused) v.play().catch(()=>{}); else clearInterval(kick);},1000);
- pc.onconnectionstatechange=()=>{if(["failed","disconnected","closed"].includes(pc.connectionState)){pc.close();setTimeout(start,2000);}};
- await pc.setLocalDescription(await pc.createOffer());
- await new Promise(r=>{if(pc.iceGatheringState==="complete")r(); pc.onicegatheringstatechange=()=>pc.iceGatheringState==="complete"&&r(); setTimeout(r,2000);});
- try{
-  const a=await fetch("/webrtc?src="+encodeURIComponent(src),{method:"POST",body:JSON.stringify({type:"offer",sdp:pc.localDescription.sdp})});
+ pc.onconnectionstatechange=()=>{
+  if(pc.connectionState==="connected"){ok=true; clearTimeout(t);}
+  else if(["failed","disconnected"].includes(pc.connectionState)) fail();};
+ (async()=>{
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise(r=>{if(pc.iceGatheringState==="complete")r(); pc.onicegatheringstatechange=()=>pc.iceGatheringState==="complete"&&r(); setTimeout(r,2000);});
+  const a=await fetch("webrtc?src="+encodeURIComponent(src),{method:"POST",body:JSON.stringify({type:"offer",sdp:pc.localDescription.sdp})});
   if(!a.ok) throw 0;
   await pc.setRemoteDescription(await a.json());
- }catch(e){pc.close(); setTimeout(start,3000);}
+ })().catch(fail);
 }
-start();
+const CODECS=["avc1.640029","avc1.64002A","avc1.640033","avc1.42E01E","mp4a.40.2","mp4a.40.5","opus"];
+function mse(){  // go2rtc's MSE protocol: ask with the codecs this browser plays, get the mime type, then fMP4 chunks
+ v.srcObject=null; const ms=new MediaSource(); v.src=URL.createObjectURL(ms);
+ ms.addEventListener("sourceopen",()=>{
+  const ws=new WebSocket(location.href.split("#")[0].replace(/^http/,"ws").replace("/play?","/ws?"));
+  ws.binaryType="arraybuffer";
+  let sb=null; const q=[];
+  const feed=()=>{if(sb && !sb.updating && q.length) sb.appendBuffer(q.shift());};
+  const trim=()=>{  // stay at the live edge and keep the buffer short
+   const b=v.buffered;
+   if(b.length){const end=b.end(b.length-1); if(end-v.currentTime>1.5) v.currentTime=end-0.2;
+    if(end-b.start(0)>30){sb.remove(b.start(0),end-10); return;}}
+   feed();};
+  ws.onopen=()=>ws.send(JSON.stringify({type:"mse",value:CODECS.filter(c=>MediaSource.isTypeSupported(`video/mp4; codecs="${c}"`)).join()}));
+  ws.onmessage=e=>{
+   if(typeof e.data==="string"){const m=JSON.parse(e.data); if(m.type==="mse" && !sb){sb=ms.addSourceBuffer(m.value); sb.mode="segments"; sb.onupdateend=trim;} return;}
+   q.push(e.data); feed();};
+  ws.onclose=()=>setTimeout(()=>location.reload(),3000);
+ },{once:true});
+}
+webrtc();
 </script></body></html>"""
 
 
@@ -100,6 +130,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _splice_ws(self, path: str) -> None:
+        """Forward this WebSocket upgrade to go2rtc, then copy bytes both ways until either side closes."""
+        head = [f"GET {path} HTTP/1.1", "Host: 127.0.0.1:1984", "Connection: Upgrade", f"Authorization: {go2rtc_auth()}"]
+        head += [f"{k}: {v}" for k, v in self.headers.items()
+                 if k.lower() not in ("host", "connection", "origin", "authorization", "cookie")]  # go2rtc checks Origin
+        try:
+            up = socket.create_connection(("127.0.0.1", 1984), timeout=10)
+        except OSError:
+            return self._reply(502, {"error": "go2rtc unreachable"})
+        up.sendall(("\r\n".join(head) + "\r\n\r\n").encode())
+        up.settimeout(None)
+
+        def pump(src: socket.socket, dst: socket.socket) -> None:
+            try:
+                while data := src.recv(65536):
+                    dst.sendall(data)
+            except OSError:
+                pass
+            for sock in (src, dst):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+        threading.Thread(target=pump, args=(self.connection, up), daemon=True).start()
+        pump(up, self.connection)
+        up.close()
+        self.close_connection = True
+
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/play":
@@ -109,6 +168,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             return self.wfile.write(data)
+        if url.path == "/ws":  # the player's MSE fallback: go2rtc's WebSocket API, with go2rtc's login added
+            src = (parse_qs(url.query).get("src") or [""])[0]
+            if src not in streams().values() or not running():
+                return self._reply(404, {"error": "no such stream"})
+            return self._splice_ws(f"/api/ws?src={src}")
         if self.headers.get("X-Token") == TOKEN and url.path == "/streams":
             video = load_prefs()["video"]
             return self._reply(200, {"on": running(), "streams": {

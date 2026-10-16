@@ -17,7 +17,9 @@ and the devices go back to ADB Control. It is meant for your own devices on your
   - **Horizontal:** ADB Control's own switch; the stream is locked to that shape (a change restarts it in about 3 s).
 - **Viewer:** ADB Control's viewer in stream mode, so the screens follow exactly the same layout rules, each one
   played over WebRTC with a sound button (browsers only autoplay muted video).
-- Optionally, a Home Assistant camera per device, to watch from outside your home network.
+- From outside your home: through ADB Control's https address (see its README, *Remote access*), the player uses
+  WebRTC when it can and otherwise MSE over a WebSocket, which goes through the tunnel.
+- Optionally, a Home Assistant camera per device.
 - The sound keeps playing on the device itself too (Android 13+).
 
 ## How it works
@@ -80,12 +82,14 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 | `GET /streams` | streams by device IP and their Vídeo switch, for ADB Control's viewer |
 | `GET /play?src=` | one stream's player page (no token) |
 | `POST /webrtc?src=` | WebRTC offer, passed on to go2rtc with its login (no token) |
+| `GET /ws?src=` | WebSocket: go2rtc's MSE stream, the player's fallback (no token) |
 
 ## Limits
 
 - Audio needs Android 11+; on older devices (and devices that accept only one adb host) leave them to ADB Control.
-- The viewer is plain http: it loads only when Home Assistant is opened over http on the LAN. From outside, use the
-  optional Home Assistant cameras (HLS with AAC audio, since WebRTC has no route in from outside).
+- On its own the viewer is plain http, which an https Home Assistant page refuses: for remote use, open it through
+  ADB Control's https address. WebRTC's media has no route in from outside, so remotely the player falls back to MSE
+  (a little more delay).
 - The Horizontal switch fixes the picture's shape; if the device shows the other orientation, the picture is sideways
   (as in ADB Control's frame).
 - Through Home Assistant's own go2rtc, WebRTC viewers get the AAC track and Home Assistant converts it to Opus with

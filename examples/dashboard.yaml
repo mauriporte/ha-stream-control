@@ -1,7 +1,8 @@
 # Dashboard view (panel) for Stream Control: paste into a dashboard's raw configuration editor as a view.
 # The viewer is ADB Control's own page in stream mode (same layout rules; set its stream_url to this container),
 # so this view needs ADB Control. Replace 192.168.1.10 with the ADB Control host. The viewer is plain http, so it only
-# loads when Home Assistant itself is opened over http on the LAN.
+# loads when Home Assistant itself is opened over http on the LAN; for remote access use ADB Control's https address,
+# e.g. https://streamcontrol.example.com/view?mode=stream&key=<key> (see ADB Control's README, Remote access).
 title: Stream
 path: stream
 icon: mdi:video-wireless

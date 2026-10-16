@@ -10,7 +10,8 @@ and the devices go back to ADB Control. It is meant for your own devices on your
 
 ## What you get
 
-- **Stream Control** switch: starts or stops the streaming service.
+- **Stream Control** per device, at the top of its card: stream it or not. The first device turned on starts the
+  service; turning one off lets go of it (back to ADB Control), and the last one off stops the service.
 - Per device, two groups of switches; turning one on turns the others of its group off, so there is only one stream:
   - **Pantalla / Cámara frontal / Cámara trasera:** the screen or one of the cameras (Android 12+); all off = the
     device leaves the viewer;
@@ -79,7 +80,8 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 
 | Request | Effect |
 |---|---|
-| `GET/POST /master` | Stream Control on/off (starts or stops go2rtc; off also disconnects this container's adb) |
+| `GET/POST /stream` | per device Stream Control: `?ip=` to read, `{"ip", "on"}` to set (default off) |
+| `GET/POST /master` | the whole service on/off (starts or stops go2rtc; off also disconnects this container's adb) |
 | `GET/POST /screen`, `/camera`, `/camera_back`, `/sound`, `/mic` | per device: `?ip=` to read, `{"ip", "on"}` to set (each group exclusive) |
 | `GET/POST /video`, `/audio` | older on/off switches: any video / any sound |
 | `GET /streams` | streams by device IP and their Vídeo switch, for ADB Control's viewer |

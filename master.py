@@ -1,6 +1,6 @@
 # Master switch for the audio+video streams: starts or stops go2rtc (which in turn starts each phone's stream only
 # while someone watches it). Home Assistant REST switch: GET /master -> {"is_on"}, POST /master {"on": true|false}.
-# Per device: GET /screen?ip=, /camera (front), /camera_back, /sound, /mic (and the older /video, /audio) -> {"is_on"};
+# Per device: GET /stream?ip= (its Stream Control switch), /screen, /camera (front), /camera_back, /sound, /mic (and the older /video, /audio) -> {"is_on"};
 # POST the same paths {"ip", "on"}.
 # GET /streams -> {"on", "streams": {ip: {"src", "video"}}} for the adb-control viewer (/view?mode=stream).
 # No token (LAN only, like the ADB viewer): GET /play?src= is one stream's player page, POST /webrtc?src= its
@@ -103,7 +103,31 @@ webrtc();
 
 def load_prefs() -> dict:
     prefs = json.load(open(PREFS)) if os.path.exists(PREFS) else {}
-    return {"audio": prefs.get("audio", {}), "video": prefs.get("video", {})}
+    return {"audio": prefs.get("audio", {}), "video": prefs.get("video", {}), "enabled": prefs.get("enabled", {})}
+
+
+def save_prefs(prefs: dict) -> None:
+    with open(PREFS + ".tmp", "w") as f:
+        json.dump(prefs, f)
+    os.replace(PREFS + ".tmp", PREFS)  # stream.py reads it while running: never let it see half a file
+
+
+def enabled(prefs: dict, ip: str) -> bool:
+    """Per device Stream Control switch (default off): off = no stream for it, and this container lets go of it."""
+    return prefs["enabled"].get(ip, False)
+
+
+def set_enabled(ip: str, on: bool) -> None:
+    prefs = load_prefs()
+    prefs["enabled"][ip] = on
+    save_prefs(prefs)
+    if on and not running():
+        apply(True)  # the first device turned on starts the service
+    elif not on:
+        # ends this device's stream (stream.py checks the switch before starting again) and frees it for ADB Control
+        subprocess.run(["adb", "disconnect", f"{ip}:5555"], capture_output=True, timeout=20)
+        if running() and not any(enabled(prefs, other) for other in streams()):
+            apply(False)  # no device left: stop the service, as the general switch does
 
 
 def source(prefs: dict, kind: str, ip: str) -> str:
@@ -207,12 +231,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("X-Token") == TOKEN and url.path == "/streams":
             prefs = load_prefs()
             return self._reply(200, {"on": running(), "streams": {
-                ip: {"src": name, "video": source(prefs, "video", ip) != "off"} for ip, name in streams().items()}})
-        if self.headers.get("X-Token") != TOKEN or url.path not in ("/master", *PREF_KINDS):
+                ip: {"src": name, "video": enabled(prefs, ip) and source(prefs, "video", ip) != "off"}
+                for ip, name in streams().items()}})
+        if self.headers.get("X-Token") != TOKEN or url.path not in ("/master", "/stream", *PREF_KINDS):
             return self._reply(403, {"error": "forbidden"})
         if url.path == "/master":
             return self._reply(200, {"is_on": running()})
         ip = (parse_qs(url.query).get("ip") or [""])[0]
+        if url.path == "/stream":
+            return self._reply(200, {"is_on": running() and enabled(load_prefs(), ip)})
         self._reply(200, {"is_on": switch_state(load_prefs(), url.path, ip)})
 
     def do_POST(self):
@@ -229,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._reply(200, json.load(r))
             except (OSError, ValueError) as e:
                 return self._reply(502, {"error": str(e)})
-        if self.headers.get("X-Token") != TOKEN or self.path not in ("/master", *PREF_KINDS):
+        if self.headers.get("X-Token") != TOKEN or self.path not in ("/master", "/stream", *PREF_KINDS):
             return self._reply(403, {"error": "forbidden"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
@@ -241,11 +268,12 @@ class Handler(BaseHTTPRequestHandler):
         ip = str(body.get("ip") or "")
         if not IP_RE.match(ip):
             return self._reply(400, {"error": "ip must be an IPv4 address"})
+        if self.path == "/stream":
+            set_enabled(ip, bool(body.get("on")))
+            return self._reply(200, {"is_on": running() and enabled(load_prefs(), ip)})
         prefs = load_prefs()
         set_switch(prefs, self.path, ip, bool(body.get("on")))
-        with open(PREFS + ".tmp", "w") as f:
-            json.dump(prefs, f)
-        os.replace(PREFS + ".tmp", PREFS)  # stream.py reads it while running: never let it see half a file
+        save_prefs(prefs)
         self._reply(200, {"is_on": switch_state(prefs, self.path, ip)})
 
     def log_message(self, *args):

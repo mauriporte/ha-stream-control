@@ -59,7 +59,7 @@ def test_streams_and_login_come_from_the_go2rtc_config(tmp_path, monkeypatch):
 
 def test_prefs_default_to_on(tmp_path, monkeypatch):
     monkeypatch.setattr(master, "PREFS", str(tmp_path / "prefs.json"))
-    assert master.load_prefs() == {"audio": {}, "video": {}}
+    assert master.load_prefs() == {"audio": {}, "video": {}, "enabled": {}}
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
@@ -109,3 +109,20 @@ def test_sources_read_old_and_new_values(tmp_path):
     assert ns["capture"]() == ("front", False)
     prefs.write_text('{"video": {"192.168.1.21": "camera_back"}, "audio": {"192.168.1.21": "mic"}}')
     assert ns["capture"]() == ("back", True)
+
+
+def test_device_stream_switch(monkeypatch, tmp_path):
+    monkeypatch.setattr(master, "PREFS", str(tmp_path / "prefs.json"))
+    monkeypatch.setattr(master, "CONFIG", str(ROOT / "go2rtc.example.yaml"))
+    calls = []
+    monkeypatch.setattr(master, "apply", lambda on: calls.append(("apply", on)))
+    monkeypatch.setattr(master.subprocess, "run", lambda args, **kw: calls.append(tuple(args)))
+    state = {"running": False}
+    monkeypatch.setattr(master, "running", lambda: state["running"])
+    assert master.enabled(master.load_prefs(), "192.168.1.21") is False  # off until turned on
+    master.set_enabled("192.168.1.21", True)
+    assert calls == [("apply", True)]  # the first device on starts the service
+    state["running"] = True
+    calls.clear()
+    master.set_enabled("192.168.1.21", False)  # the last one off: let go of it and stop the service
+    assert calls == [("adb", "disconnect", "192.168.1.21:5555"), ("apply", False)]

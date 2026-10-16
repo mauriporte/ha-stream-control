@@ -109,6 +109,11 @@ def camera_orientation(landscape: bool, facing: str) -> str:
 
 
 IP, OUTPUT = sys.argv[1], sys.argv[2]
+try:
+    if not json.load(open(PREFS)).get("enabled", {}).get(IP, False):
+        sys.exit("Stream Control is off for this device")  # its card switch; go2rtc may still try to start it
+except (OSError, ValueError):
+    pass
 SERIAL = f"{IP}:5555"
 subprocess.run(["adb", "connect", SERIAL], capture_output=True, timeout=20)  # this container has its own adb server
 subprocess.run(["adb", "-s", SERIAL, "wait-for-device"], capture_output=True, timeout=20)  # a fresh connection needs a moment

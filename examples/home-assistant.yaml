@@ -4,7 +4,24 @@
 # secrets.yaml must contain:  stream_control_token: <the same value as ADB_CONTROL_TOKEN in the container>
 
 switch:
-  # Main switch: starts or stops go2rtc. Off = nothing streams.
+  # Stream Control per device (the switch at the top of each device's card): stream it or not. The first one on
+  # starts the service; off lets go of the device (and the last one off stops the service).
+  - platform: rest
+    name: Stream Phone A control
+    unique_id: stream_phone_a_enabled
+    icon: mdi:cast-audio
+    resource: http://192.168.1.20:8005/stream
+    state_resource: http://192.168.1.20:8005/stream?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+    timeout: 30
+
+  # Optional: the whole service at once (starts or stops go2rtc)
   - platform: rest
     name: Stream Control
     unique_id: stream_control_master
@@ -108,8 +125,22 @@ automation:
           entity_id: >-
             {% set dev = trigger.entity_id | regex_replace('_(video|camera_back|camera|audio|mic)$', '') %}
             {{ states.switch | map(attribute='entity_id') | select('match', dev ~ '_(video|camera_back|camera|audio|mic)$') | list }}
-  # Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
-  # ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
+  # Optional, with ADB Control: a device whose Stream Control is turned off goes back to ADB Control
+  # (rest_command.adb_connect is in ADB Control's own example configuration). One trigger per device.
+  - alias: "Stream Control off for a device: back to ADB Control"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: switch.stream_phone_a_control
+        from: "on"
+        to: "off"
+        id: "192.168.1.21"
+    actions:
+      - action: rest_command.adb_connect
+        data:
+          ip: "{{ trigger.id }}"
+        continue_on_error: true
+  # the same for the optional whole-service switch
   - alias: "Stream Control off: devices back to ADB Control"
     triggers:
       - trigger: state

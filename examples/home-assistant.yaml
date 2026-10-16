@@ -19,14 +19,15 @@ switch:
       Content-Type: application/json
     timeout: 30
 
-  # Per device (repeat for each one, changing name, unique_id and ip):
-  # video: the device is shown in the viewer (its stream only starts while someone watches it)
+  # Per device (repeat for each one, changing name, unique_id and ip). Two pairs; turning one switch on turns the
+  # other of its pair off. Pantalla/Cámara: what is streamed (both off = left out of the viewer).
+  # Sonido/Micrófono: what is heard (both off = silence, applied live). Changing the source restarts the stream.
   - platform: rest
-    name: Stream Phone A vídeo
+    name: Stream Phone A pantalla
     unique_id: stream_phone_a_video
-    icon: mdi:video
-    resource: http://192.168.1.20:8005/video
-    state_resource: http://192.168.1.20:8005/video?ip=192.168.1.21
+    icon: mdi:monitor-cellphone
+    resource: http://192.168.1.20:8005/screen
+    state_resource: http://192.168.1.20:8005/screen?ip=192.168.1.21
     method: post
     body_on: '{"ip": "192.168.1.21", "on": true}'
     body_off: '{"ip": "192.168.1.21", "on": false}'
@@ -34,13 +35,40 @@ switch:
     headers:
       X-Token: !secret stream_control_token
       Content-Type: application/json
-  # audio: off sends silence instead of the device's sound, live (no restart)
+  # the front camera (Android 12+); the Horizontal switch sets its shape too
   - platform: rest
-    name: Stream Phone A audio
+    name: Stream Phone A cámara
+    unique_id: stream_phone_a_camera
+    icon: mdi:webcam
+    resource: http://192.168.1.20:8005/camera
+    state_resource: http://192.168.1.20:8005/camera?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+  - platform: rest
+    name: Stream Phone A sonido
     unique_id: stream_phone_a_audio
     icon: mdi:volume-high
-    resource: http://192.168.1.20:8005/audio
-    state_resource: http://192.168.1.20:8005/audio?ip=192.168.1.21
+    resource: http://192.168.1.20:8005/sound
+    state_resource: http://192.168.1.20:8005/sound?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+  # Android 11+
+  - platform: rest
+    name: Stream Phone A micrófono
+    unique_id: stream_phone_a_mic
+    icon: mdi:microphone
+    resource: http://192.168.1.20:8005/mic
+    state_resource: http://192.168.1.20:8005/mic?ip=192.168.1.21
     method: post
     body_on: '{"ip": "192.168.1.21", "on": true}'
     body_off: '{"ip": "192.168.1.21", "on": false}'
@@ -52,6 +80,18 @@ switch:
 # Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
 # ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
 automation:
+  # The pairs are exclusive in the container; refresh the other switch of the pair at once (REST switches poll slowly)
+  - alias: "Stream: refresh the switch pairs"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: [switch.stream_phone_a_video, switch.stream_phone_a_camera, switch.stream_phone_a_audio, switch.stream_phone_a_mic]
+        to: "on"
+    actions:
+      - delay: { seconds: 1 }
+      - action: homeassistant.update_entity
+        target:
+          entity_id: "{{ states.switch | map(attribute='entity_id') | select('match', trigger.entity_id.rsplit('_', 1)[0] ~ '_(video|camera|audio|mic)$') | list }}"
   - alias: "Stream Control off: devices back to ADB Control"
     triggers:
       - trigger: state

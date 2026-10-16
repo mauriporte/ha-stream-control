@@ -55,11 +55,28 @@ def want_landscape() -> bool:
         return bool(json.load(r)["is_on"])
 
 
-def audio_on() -> bool:
+def sources() -> tuple[str, str]:
+    """This device's video source (screen | camera | off) and audio source (output | mic | off), from master.py."""
     try:
-        return json.load(open(PREFS)).get("audio", {}).get(IP, True)
+        prefs = json.load(open(PREFS))
     except (OSError, ValueError):
-        return True
+        prefs = {}
+    got = []
+    for kind, default in (("video", "screen"), ("audio", "output")):
+        value = prefs.get(kind, {}).get(IP, default)
+        got.append((default if value else "off") if isinstance(value, bool) else value)  # older files: true/false
+    return got[0], got[1]
+
+
+def audio_on() -> bool:
+    return sources()[1] != "off"
+
+
+def capture() -> tuple[bool, bool]:
+    """What scrcpy must capture: (camera instead of the screen, microphone instead of the device's sound).
+    Off does not change it: no video only leaves the viewer, no audio is silence sent live."""
+    video, audio_src = sources()
+    return video == "camera", audio_src == "mic"
 
 
 def capture_orientation(landscape: bool) -> str:
@@ -73,6 +90,18 @@ def capture_orientation(landscape: bool) -> str:
         return "@"  # lock the initial orientation
     natural_landscape = (w > h) == (rot % 2 == 0)
     return "@0" if natural_landscape == landscape else "@90"
+
+
+def camera_orientation(landscape: bool) -> str:
+    """Clockwise rotation that makes the front camera's picture upright in the wanted shape: the sensor's own angle,
+    minus the display rotation (the current one if it already has that shape, else the usual 0 / 90)."""
+    # e.g. "android.sensor.orientation (e000e): int32[1]\n  [270 ]" in the FRONT camera's block
+    m = re.search(r"FRONT.*?android\.sensor\.orientation \(\w+\): int32\[1\]\s*\[\s*(\d+)", adb("shell", "dumpsys", "media.camera"), re.S)
+    sensor = int(m.group(1)) if m else 270
+    d = re.search(r"mOverrideDisplayInfo.*?rotation (\d)", adb("shell", "dumpsys", "display"))
+    rot = int(d.group(1)) if d else 0
+    deg = rot * 90 if (rot % 2 == 1) == landscape else (90 if landscape else 0)
+    return str((sensor - deg) % 360)
 
 
 IP, OUTPUT = sys.argv[1], sys.argv[2]
@@ -95,10 +124,16 @@ params = [f"scid={scid}", "log_level=warn", "tunnel_forward=true", "control=true
           "max_size=1024", "video_bit_rate=4000000", "max_fps=30",
           # viewers that join a running stream need a keyframe with SPS/PPS soon (scrcpy's default is every 10 s)
           "video_codec_options=i-frame-interval:int=2,prepend-sps-pps-to-idr-frames:int=1"]
-if sdk >= 33:
+camera, mic = capture()
+if camera:
+    params += ["video_source=camera", "camera_facing=front"]  # the front camera: the device's webcam (Android 12+)
+if mic:
+    params.append("audio_source=mic")
+elif sdk >= 33:
     params.append("audio_dup=true")  # keep the sound playing on the phone too (Android 13+)
 if landscape is not None:
-    params.append(f"capture_orientation={capture_orientation(landscape)}")
+    shape = camera_orientation(landscape) if camera else capture_orientation(landscape)
+    params.append(f"capture_orientation={shape}")
 server = subprocess.Popen(["adb", "-s", SERIAL, "shell",
                            f"CLASSPATH={JAR_REMOTE} app_process / com.genymobile.scrcpy.Server {SCRCPY_VERSION} "
                            + " ".join(params)])
@@ -176,18 +211,19 @@ def keyframe_keepalive(ctrl: socket.socket) -> None:
         return
 
 
-def orientation_watch() -> None:
-    """The picture shape is fixed when scrcpy starts, so a change of the Horizontal switch ends this stream;
-    go2rtc starts a new one, with the new shape, when the camera is opened again."""
+def settings_watch() -> None:
+    """The picture shape and the sources are fixed when scrcpy starts, so a change of the Horizontal switch, of
+    screen/camera or of sound/mic ends this stream; go2rtc starts a new one, with the new settings, right away."""
     while True:
         time.sleep(3)
         try:
-            if want_landscape() != landscape:
-                log("Horizontal switch changed: restarting")
-                os.kill(os.getpid(), signal.SIGTERM)
-                return
+            changed = capture() != (camera, mic) or (landscape is not None and want_landscape() != landscape)
         except (OSError, ValueError, KeyError):
-            pass
+            changed = False
+        if changed:
+            log("settings changed: restarting")
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
 
 
 def drain(sock: socket.socket) -> None:
@@ -212,8 +248,7 @@ try:
     start(video_pump, video, vwr)
     start(keyframe_keepalive, ctrl)
     start(drain, ctrl)
-    if landscape is not None:
-        start(orientation_watch)
+    start(settings_watch)
     log(f"sdk {sdk}, audio {audio}, publishing to go2rtc")
     # minimal probing: the first packet carries SPS/PPS, and Home Assistant gives up if publishing takes over 5 s
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "warning", "-fflags", "nobuffer", "-probesize", "32",

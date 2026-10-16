@@ -11,10 +11,12 @@ and the devices go back to ADB Control. It is meant for your own devices on your
 ## What you get
 
 - **Stream Control** switch: starts or stops the streaming service.
-- Per device:
-  - **Vídeo:** the device is shown in the viewer (its stream starts when the viewer opens);
-  - **Audio:** off sends silence instead of the device's sound, instantly, without restarting the stream;
-  - **Horizontal:** ADB Control's own switch; the stream is locked to that shape (a change restarts it in about 3 s).
+- Per device, two pairs of switches; turning one on turns the other of its pair off, so there is only one stream:
+  - **Pantalla / Cámara:** the screen or the front camera (the device's webcam, Android 12+); both off = the device
+    leaves the viewer;
+  - **Sonido / Micrófono:** the device's sound or its microphone (Android 11+); both off = silence, instantly;
+  - **Horizontal:** ADB Control's own switch; the stream (screen or camera) is locked to that shape.
+  - Changing the source or the shape restarts the stream by itself in about 3 s.
 - **Viewer:** ADB Control's viewer in stream mode, so the screens follow exactly the same layout rules, each one
   played over WebRTC with a sound button (browsers only autoplay muted video).
 - From outside your home: through ADB Control's https address (see its README, *Remote access*), the player uses
@@ -78,7 +80,8 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 | Request | Effect |
 |---|---|
 | `GET/POST /master` | Stream Control on/off (starts or stops go2rtc; off also disconnects this container's adb) |
-| `GET/POST /audio`, `/video` | per device: `?ip=` to read, `{"ip", "on"}` to set |
+| `GET/POST /screen`, `/camera`, `/sound`, `/mic` | per device: `?ip=` to read, `{"ip", "on"}` to set (each pair exclusive) |
+| `GET/POST /video`, `/audio` | older on/off switches: any video / any sound |
 | `GET /streams` | streams by device IP and their Vídeo switch, for ADB Control's viewer |
 | `GET /play?src=` | one stream's player page (no token) |
 | `POST /webrtc?src=` | WebRTC offer, passed on to go2rtc with its login (no token) |
@@ -86,6 +89,8 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 
 ## Limits
 
+- While the camera or the microphone is in use, Android shows its privacy indicator, and an app on the device that
+  is already using the camera keeps the stream from opening it (and the other way round).
 - Audio needs Android 11+; on older devices (and devices that accept only one adb host) leave them to ADB Control.
 - On its own the viewer is plain http, which an https Home Assistant page refuses: for remote use, open it through
   ADB Control's https address. WebRTC's media has no route in from outside, so remotely the player falls back to MSE

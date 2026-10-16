@@ -1,6 +1,7 @@
 # Master switch for the audio+video streams: starts or stops go2rtc (which in turn starts each phone's stream only
 # while someone watches it). Home Assistant REST switch: GET /master -> {"is_on"}, POST /master {"on": true|false}.
-# Per device: GET /audio?ip=, /video?ip= -> {"is_on"}; POST /audio, /video {"ip", "on"}.
+# Per device: GET /screen?ip=, /camera, /sound, /mic (and the older /video, /audio) -> {"is_on"};
+# POST the same paths {"ip", "on"}.
 # GET /streams -> {"on", "streams": {ip: {"src", "video"}}} for the adb-control viewer (/view?mode=stream).
 # No token (LAN only, like the ADB viewer): GET /play?src= is one stream's player page, POST /webrtc?src= its
 # WebRTC offer, passed on to go2rtc with go2rtc's own login.
@@ -21,9 +22,15 @@ TOKEN = os.environ["ADB_CONTROL_TOKEN"]
 STATE = "/data/master_on"  # exists = on (kept across container restarts)
 CONFIG = "/data/go2rtc.yaml"
 go2rtc: dict = {"proc": None}
-# per device, default on: "audio" (stream.py sends silence while off) and "video" (shown in the stream viewer, /view?mode=stream on adb-control)
+# Per device, one video source (screen | camera | off) and one audio source (output | mic | off). Each switch is one
+# value, so turning one on turns the other of its pair off; both off = no video (left out of the viewer) or silence.
+# /video and /audio are the older on/off switches (on = the source in use, or screen/output if it was off).
 PREFS = "/data/prefs.json"
-PREF_KINDS = ("/audio", "/video")
+SWITCHES = {"/screen": ("video", "screen"), "/camera": ("video", "camera"),
+            "/sound": ("audio", "output"), "/mic": ("audio", "mic"),
+            "/video": ("video", None), "/audio": ("audio", None)}
+DEFAULT = {"video": "screen", "audio": "output"}
+PREF_KINDS = tuple(SWITCHES)
 IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 
@@ -97,6 +104,30 @@ webrtc();
 def load_prefs() -> dict:
     prefs = json.load(open(PREFS)) if os.path.exists(PREFS) else {}
     return {"audio": prefs.get("audio", {}), "video": prefs.get("video", {})}
+
+
+def source(prefs: dict, kind: str, ip: str) -> str:
+    value = prefs[kind].get(ip, DEFAULT[kind])
+    if isinstance(value, bool):  # saved by the older on/off switches
+        return DEFAULT[kind] if value else "off"
+    return value
+
+
+def switch_state(prefs: dict, path: str, ip: str) -> bool:
+    kind, value = SWITCHES[path]
+    current = source(prefs, kind, ip)
+    return current != "off" if value is None else current == value
+
+
+def set_switch(prefs: dict, path: str, ip: str, on: bool) -> None:
+    kind, value = SWITCHES[path]
+    current = source(prefs, kind, ip)
+    if value is None:  # older switch: on keeps the source in use (or the default), off silences / hides
+        prefs[kind][ip] = (current if current != "off" else DEFAULT[kind]) if on else "off"
+    elif on:
+        prefs[kind][ip] = value
+    elif current == value:
+        prefs[kind][ip] = "off"
 
 
 def running() -> bool:
@@ -174,15 +205,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reply(404, {"error": "no such stream"})
             return self._splice_ws(f"/api/ws?src={src}")
         if self.headers.get("X-Token") == TOKEN and url.path == "/streams":
-            video = load_prefs()["video"]
+            prefs = load_prefs()
             return self._reply(200, {"on": running(), "streams": {
-                ip: {"src": name, "video": video.get(ip, True)} for ip, name in streams().items()}})
+                ip: {"src": name, "video": source(prefs, "video", ip) != "off"} for ip, name in streams().items()}})
         if self.headers.get("X-Token") != TOKEN or url.path not in ("/master", *PREF_KINDS):
             return self._reply(403, {"error": "forbidden"})
         if url.path == "/master":
             return self._reply(200, {"is_on": running()})
         ip = (parse_qs(url.query).get("ip") or [""])[0]
-        self._reply(200, {"is_on": load_prefs()[url.path[1:]].get(ip, True)})
+        self._reply(200, {"is_on": switch_state(load_prefs(), url.path, ip)})
 
     def do_POST(self):
         url = urlparse(self.path)
@@ -211,11 +242,11 @@ class Handler(BaseHTTPRequestHandler):
         if not IP_RE.match(ip):
             return self._reply(400, {"error": "ip must be an IPv4 address"})
         prefs = load_prefs()
-        prefs[self.path[1:]][ip] = bool(body.get("on"))
+        set_switch(prefs, self.path, ip, bool(body.get("on")))
         with open(PREFS + ".tmp", "w") as f:
             json.dump(prefs, f)
         os.replace(PREFS + ".tmp", PREFS)  # stream.py reads it while running: never let it see half a file
-        self._reply(200, {"is_on": prefs[self.path[1:]][ip]})
+        self._reply(200, {"is_on": switch_state(prefs, self.path, ip)})
 
     def log_message(self, *args):
         pass

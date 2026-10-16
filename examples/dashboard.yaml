@@ -38,14 +38,20 @@ cards:
               state_color: true
               entities:
                 - entity: switch.stream_phone_a_video
-                  name: Vídeo
+                  name: Pantalla
                   icon: mdi:monitor-cellphone
+                - entity: switch.stream_phone_a_camera
+                  name: Cámara
+                  icon: mdi:webcam
                 - entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
                   name: Horizontal
                   icon: mdi:phone-rotate-landscape
                 - entity: switch.stream_phone_a_audio
-                  name: Audio
+                  name: Sonido
                   icon: mdi:volume-high
+                - entity: switch.stream_phone_a_mic
+                  name: Micrófono
+                  icon: mdi:microphone
       - type: iframe
         url: http://192.168.1.10:8002/view?mode=stream
         aspect_ratio: 110%

@@ -68,3 +68,38 @@ def test_player_page_javascript_parses(tmp_path):
     f = tmp_path / "play.js"
     f.write_text(js, encoding="utf8")
     assert subprocess.run(["node", "--check", str(f)]).returncode == 0
+
+
+def test_switch_pairs_turn_each_other_off():
+    prefs = {"audio": {}, "video": {}}
+    ip = "192.168.1.21"
+    state = lambda: {k: master.switch_state(prefs, "/" + k, ip) for k in ("screen", "camera", "sound", "mic")}
+    assert state() == {"screen": True, "camera": False, "sound": True, "mic": False}  # defaults
+    master.set_switch(prefs, "/camera", ip, True)
+    master.set_switch(prefs, "/mic", ip, True)
+    assert state() == {"screen": False, "camera": True, "sound": False, "mic": True}
+    master.set_switch(prefs, "/screen", ip, False)  # turning off the one not in use changes nothing
+    assert state()["camera"] is True
+    master.set_switch(prefs, "/camera", ip, False)  # both off: no video
+    assert master.source(prefs, "video", ip) == "off" and not master.switch_state(prefs, "/video", ip)
+    prefs["audio"][ip] = False  # written by the older on/off switch
+    assert master.source(prefs, "audio", ip) == "off"
+
+
+def test_camera_follows_the_wanted_shape():
+    cams = (" android.lens.facing (80005): byte[1]\n [BACK ]\n android.sensor.orientation (e000e): int32[1]\n [90 ]\n"
+            " android.lens.facing (80005): byte[1]\n [FRONT ]\n android.sensor.orientation (e000e): int32[1]\n [270 ]\n")
+    ns = stream_functions("")
+    ns["adb"] = lambda *args, **kw: cams if "media.camera" in args else display(1080, 1920, 0)
+    assert ns["camera_orientation"](False) == "270"  # upright, vertical
+    assert ns["camera_orientation"](True) == "180"  # horizontal
+
+
+def test_sources_read_old_and_new_values(tmp_path):
+    ns = stream_functions("")
+    ns["IP"] = "192.168.1.21"
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text('{"video": {"192.168.1.21": "camera"}, "audio": {"192.168.1.21": true}}')
+    ns["PREFS"] = str(prefs)
+    assert ns["sources"]() == ("camera", "output")
+    assert ns["capture"]() == (True, False)

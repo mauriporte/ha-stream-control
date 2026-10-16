@@ -22,8 +22,10 @@ switch:
   # Per device (repeat for each one, changing name, unique_id and ip). Two pairs; turning one switch on turns the
   # other of its pair off. Pantalla/Cámara: what is streamed (both off = left out of the viewer).
   # Sonido/Micrófono: what is heard (both off = silence, applied live). Changing the source restarts the stream.
+  # The names give the entity IDs used below (switch.stream_phone_a_video, _camera, _audio, _mic); the dashboard
+  # shows them as Pantalla, Cámara, Sonido and Micrófono.
   - platform: rest
-    name: Stream Phone A pantalla
+    name: Stream Phone A video
     unique_id: stream_phone_a_video
     icon: mdi:monitor-cellphone
     resource: http://192.168.1.20:8005/screen
@@ -37,7 +39,7 @@ switch:
       Content-Type: application/json
   # the front camera (Android 12+); the Horizontal switch sets its shape too
   - platform: rest
-    name: Stream Phone A cámara
+    name: Stream Phone A camera
     unique_id: stream_phone_a_camera
     icon: mdi:webcam
     resource: http://192.168.1.20:8005/camera
@@ -50,7 +52,7 @@ switch:
       X-Token: !secret stream_control_token
       Content-Type: application/json
   - platform: rest
-    name: Stream Phone A sonido
+    name: Stream Phone A audio
     unique_id: stream_phone_a_audio
     icon: mdi:volume-high
     resource: http://192.168.1.20:8005/sound
@@ -64,7 +66,7 @@ switch:
       Content-Type: application/json
   # Android 11+
   - platform: rest
-    name: Stream Phone A micrófono
+    name: Stream Phone A mic
     unique_id: stream_phone_a_mic
     icon: mdi:microphone
     resource: http://192.168.1.20:8005/mic
@@ -77,8 +79,6 @@ switch:
       X-Token: !secret stream_control_token
       Content-Type: application/json
 
-# Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
-# ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
 automation:
   # The pairs are exclusive in the container; refresh the other switch of the pair at once (REST switches poll slowly)
   - alias: "Stream: refresh the switch pairs"
@@ -92,6 +92,8 @@ automation:
       - action: homeassistant.update_entity
         target:
           entity_id: "{{ states.switch | map(attribute='entity_id') | select('match', trigger.entity_id.rsplit('_', 1)[0] ~ '_(video|camera|audio|mic)$') | list }}"
+  # Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
+  # ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
   - alias: "Stream Control off: devices back to ADB Control"
     triggers:
       - trigger: state

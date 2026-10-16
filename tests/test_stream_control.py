@@ -80,7 +80,9 @@ def test_switch_pairs_turn_each_other_off():
     assert state() == {"screen": False, "camera": True, "sound": False, "mic": True}
     master.set_switch(prefs, "/screen", ip, False)  # turning off the one not in use changes nothing
     assert state()["camera"] is True
-    master.set_switch(prefs, "/camera", ip, False)  # both off: no video
+    master.set_switch(prefs, "/camera_back", ip, True)  # the three video switches are one group
+    assert master.switch_state(prefs, "/camera_back", ip) and not master.switch_state(prefs, "/camera", ip)
+    master.set_switch(prefs, "/camera_back", ip, False)  # all off: no video
     assert master.source(prefs, "video", ip) == "off" and not master.switch_state(prefs, "/video", ip)
     prefs["audio"][ip] = False  # written by the older on/off switch
     assert master.source(prefs, "audio", ip) == "off"
@@ -91,8 +93,10 @@ def test_camera_follows_the_wanted_shape():
             " android.lens.facing (80005): byte[1]\n [FRONT ]\n android.sensor.orientation (e000e): int32[1]\n [270 ]\n")
     ns = stream_functions("")
     ns["adb"] = lambda *args, **kw: cams if "media.camera" in args else display(1080, 1920, 0)
-    assert ns["camera_orientation"](False) == "270"  # upright, vertical
-    assert ns["camera_orientation"](True) == "180"  # horizontal
+    assert ns["camera_orientation"](False, "front") == "270"  # upright, vertical
+    assert ns["camera_orientation"](True, "front") == "180"  # horizontal
+    assert ns["camera_orientation"](False, "back") == "90"
+    assert ns["camera_orientation"](True, "back") == "0"
 
 
 def test_sources_read_old_and_new_values(tmp_path):
@@ -102,4 +106,6 @@ def test_sources_read_old_and_new_values(tmp_path):
     prefs.write_text('{"video": {"192.168.1.21": "camera"}, "audio": {"192.168.1.21": true}}')
     ns["PREFS"] = str(prefs)
     assert ns["sources"]() == ("camera", "output")
-    assert ns["capture"]() == (True, False)
+    assert ns["capture"]() == ("front", False)
+    prefs.write_text('{"video": {"192.168.1.21": "camera_back"}, "audio": {"192.168.1.21": "mic"}}')
+    assert ns["capture"]() == ("back", True)

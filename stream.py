@@ -56,7 +56,7 @@ def want_landscape() -> bool:
 
 
 def sources() -> tuple[str, str]:
-    """This device's video source (screen | camera | off) and audio source (output | mic | off), from master.py."""
+    """This device's video source (screen | camera | camera_back | off) and audio source (output | mic | off)."""
     try:
         prefs = json.load(open(PREFS))
     except (OSError, ValueError):
@@ -72,11 +72,14 @@ def audio_on() -> bool:
     return sources()[1] != "off"
 
 
-def capture() -> tuple[bool, bool]:
-    """What scrcpy must capture: (camera instead of the screen, microphone instead of the device's sound).
+CAMERAS = {"camera": "front", "camera_back": "back"}  # video source -> scrcpy camera_facing
+
+
+def capture() -> tuple[str, bool]:
+    """What scrcpy must capture: (camera facing, or "" for the screen; microphone instead of the device's sound).
     Off does not change it: no video only leaves the viewer, no audio is silence sent live."""
     video, audio_src = sources()
-    return video == "camera", audio_src == "mic"
+    return CAMERAS.get(video, ""), audio_src == "mic"
 
 
 def capture_orientation(landscape: bool) -> str:
@@ -92,12 +95,13 @@ def capture_orientation(landscape: bool) -> str:
     return "@0" if natural_landscape == landscape else "@90"
 
 
-def camera_orientation(landscape: bool) -> str:
-    """Clockwise rotation that makes the front camera's picture upright in the wanted shape: the sensor's own angle,
+def camera_orientation(landscape: bool, facing: str) -> str:
+    """Clockwise rotation that makes the camera's picture upright in the wanted shape: the sensor's own angle,
     minus the display rotation (the current one if it already has that shape, else the usual 0 / 90)."""
-    # e.g. "android.sensor.orientation (e000e): int32[1]\n  [270 ]" in the FRONT camera's block
-    m = re.search(r"FRONT.*?android\.sensor\.orientation \(\w+\): int32\[1\]\s*\[\s*(\d+)", adb("shell", "dumpsys", "media.camera"), re.S)
-    sensor = int(m.group(1)) if m else 270
+    # e.g. "android.lens.facing (80005): byte[1]\n [FRONT ]\n android.sensor.orientation (e000e): int32[1]\n [270 ]"
+    m = re.search(facing.upper() + r" \].*?android\.sensor\.orientation \(\w+\): int32\[1\]\s*\[\s*(\d+)",
+                  adb("shell", "dumpsys", "media.camera"), re.S)
+    sensor = int(m.group(1)) if m else {"front": 270, "back": 90}[facing]
     d = re.search(r"mOverrideDisplayInfo.*?rotation (\d)", adb("shell", "dumpsys", "display"))
     rot = int(d.group(1)) if d else 0
     deg = rot * 90 if (rot % 2 == 1) == landscape else (90 if landscape else 0)
@@ -124,15 +128,15 @@ params = [f"scid={scid}", "log_level=warn", "tunnel_forward=true", "control=true
           "max_size=1024", "video_bit_rate=4000000", "max_fps=30",
           # viewers that join a running stream need a keyframe with SPS/PPS soon (scrcpy's default is every 10 s)
           "video_codec_options=i-frame-interval:int=2,prepend-sps-pps-to-idr-frames:int=1"]
-camera, mic = capture()
+camera, mic = capture()  # camera = "front" / "back", or "" for the screen
 if camera:
-    params += ["video_source=camera", "camera_facing=front"]  # the front camera: the device's webcam (Android 12+)
+    params += ["video_source=camera", f"camera_facing={camera}"]  # Android 12+
 if mic:
     params.append("audio_source=mic")
 elif sdk >= 33:
     params.append("audio_dup=true")  # keep the sound playing on the phone too (Android 13+)
 if landscape is not None:
-    shape = camera_orientation(landscape) if camera else capture_orientation(landscape)
+    shape = camera_orientation(landscape, camera) if camera else capture_orientation(landscape)
     params.append(f"capture_orientation={shape}")
 server = subprocess.Popen(["adb", "-s", SERIAL, "shell",
                            f"CLASSPATH={JAR_REMOTE} app_process / com.genymobile.scrcpy.Server {SCRCPY_VERSION} "

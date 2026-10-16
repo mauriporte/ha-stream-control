@@ -41,8 +41,11 @@ cards:
                   name: Pantalla
                   icon: mdi:monitor-cellphone
                 - entity: switch.stream_phone_a_camera
-                  name: Cámara
+                  name: Cámara frontal
                   icon: mdi:webcam
+                - entity: switch.stream_phone_a_camera_back
+                  name: Cámara trasera
+                  icon: mdi:camera-rear
                 - entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
                   name: Horizontal
                   icon: mdi:phone-rotate-landscape

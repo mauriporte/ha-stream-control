@@ -19,11 +19,11 @@ switch:
       Content-Type: application/json
     timeout: 30
 
-  # Per device (repeat for each one, changing name, unique_id and ip). Two pairs; turning one switch on turns the
-  # other of its pair off. Pantalla/Cámara: what is streamed (both off = left out of the viewer).
+  # Per device (repeat for each one, changing name, unique_id and ip). Two groups; turning one switch on turns the
+  # others of its group off. Pantalla/Cámara frontal/Cámara trasera: what is streamed (all off = left out of the viewer).
   # Sonido/Micrófono: what is heard (both off = silence, applied live). Changing the source restarts the stream.
-  # The names give the entity IDs used below (switch.stream_phone_a_video, _camera, _audio, _mic); the dashboard
-  # shows them as Pantalla, Cámara, Sonido and Micrófono.
+  # The names give the entity IDs used below (switch.stream_phone_a_video, _camera, _camera_back, _audio, _mic);
+  # the dashboard shows them as Pantalla, Cámara frontal, Cámara trasera, Sonido and Micrófono.
   - platform: rest
     name: Stream Phone A video
     unique_id: stream_phone_a_video
@@ -37,7 +37,7 @@ switch:
     headers:
       X-Token: !secret stream_control_token
       Content-Type: application/json
-  # the front camera (Android 12+); the Horizontal switch sets its shape too
+  # the front camera (Android 12+); the Horizontal switch sets the cameras' shape too
   - platform: rest
     name: Stream Phone A camera
     unique_id: stream_phone_a_camera
@@ -64,6 +64,20 @@ switch:
     headers:
       X-Token: !secret stream_control_token
       Content-Type: application/json
+  # the rear camera
+  - platform: rest
+    name: Stream Phone A camera back
+    unique_id: stream_phone_a_camera_back
+    icon: mdi:camera-rear
+    resource: http://192.168.1.20:8005/camera_back
+    state_resource: http://192.168.1.20:8005/camera_back?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
   # Android 11+
   - platform: rest
     name: Stream Phone A mic
@@ -80,18 +94,21 @@ switch:
       Content-Type: application/json
 
 automation:
-  # The pairs are exclusive in the container; refresh the other switch of the pair at once (REST switches poll slowly)
+  # The groups are exclusive in the container; refresh the device's other switches at once (REST switches poll slowly)
   - alias: "Stream: refresh the switch pairs"
     mode: queued
     triggers:
       - trigger: state
-        entity_id: [switch.stream_phone_a_video, switch.stream_phone_a_camera, switch.stream_phone_a_audio, switch.stream_phone_a_mic]
+        entity_id: [switch.stream_phone_a_video, switch.stream_phone_a_camera, switch.stream_phone_a_camera_back,
+                    switch.stream_phone_a_audio, switch.stream_phone_a_mic]
         to: "on"
     actions:
       - delay: { seconds: 1 }
       - action: homeassistant.update_entity
         target:
-          entity_id: "{{ states.switch | map(attribute='entity_id') | select('match', trigger.entity_id.rsplit('_', 1)[0] ~ '_(video|camera|audio|mic)$') | list }}"
+          entity_id: >-
+            {% set dev = trigger.entity_id | regex_replace('_(video|camera_back|camera|audio|mic)$', '') %}
+            {{ states.switch | map(attribute='entity_id') | select('match', dev ~ '_(video|camera_back|camera|audio|mic)$') | list }}
   # Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
   # ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
   - alias: "Stream Control off: devices back to ADB Control"

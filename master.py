@@ -1,6 +1,6 @@
 # Master switch for the audio+video streams: starts or stops go2rtc (which in turn starts each phone's stream only
 # while someone watches it). Home Assistant REST switch: GET /master -> {"is_on"}, POST /master {"on": true|false}.
-# Per device: GET /screen?ip=, /camera, /sound, /mic (and the older /video, /audio) -> {"is_on"};
+# Per device: GET /screen?ip=, /camera (front), /camera_back, /sound, /mic (and the older /video, /audio) -> {"is_on"};
 # POST the same paths {"ip", "on"}.
 # GET /streams -> {"on", "streams": {ip: {"src", "video"}}} for the adb-control viewer (/view?mode=stream).
 # No token (LAN only, like the ADB viewer): GET /play?src= is one stream's player page, POST /webrtc?src= its
@@ -22,11 +22,11 @@ TOKEN = os.environ["ADB_CONTROL_TOKEN"]
 STATE = "/data/master_on"  # exists = on (kept across container restarts)
 CONFIG = "/data/go2rtc.yaml"
 go2rtc: dict = {"proc": None}
-# Per device, one video source (screen | camera | off) and one audio source (output | mic | off). Each switch is one
+# Per device, one video source (screen | camera | camera_back | off) and one audio source (output | mic | off). Each switch is one
 # value, so turning one on turns the other of its pair off; both off = no video (left out of the viewer) or silence.
 # /video and /audio are the older on/off switches (on = the source in use, or screen/output if it was off).
 PREFS = "/data/prefs.json"
-SWITCHES = {"/screen": ("video", "screen"), "/camera": ("video", "camera"),
+SWITCHES = {"/screen": ("video", "screen"), "/camera": ("video", "camera"), "/camera_back": ("video", "camera_back"),
             "/sound": ("audio", "output"), "/mic": ("audio", "mic"),
             "/video": ("video", None), "/audio": ("audio", None)}
 DEFAULT = {"video": "screen", "audio": "output"}

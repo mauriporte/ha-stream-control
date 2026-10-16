@@ -11,9 +11,9 @@ and the devices go back to ADB Control. It is meant for your own devices on your
 ## What you get
 
 - **Stream Control** switch: starts or stops the streaming service.
-- Per device, two pairs of switches; turning one on turns the other of its pair off, so there is only one stream:
-  - **Pantalla / Cámara:** the screen or the front camera (the device's webcam, Android 12+); both off = the device
-    leaves the viewer;
+- Per device, two groups of switches; turning one on turns the others of its group off, so there is only one stream:
+  - **Pantalla / Cámara frontal / Cámara trasera:** the screen or one of the cameras (Android 12+); all off = the
+    device leaves the viewer;
   - **Sonido / Micrófono:** the device's sound or its microphone (Android 11+); both off = silence, instantly;
   - **Horizontal:** ADB Control's own switch; the stream (screen or camera) is locked to that shape.
   - Changing the source or the shape restarts the stream by itself in about 3 s.
@@ -80,7 +80,7 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 | Request | Effect |
 |---|---|
 | `GET/POST /master` | Stream Control on/off (starts or stops go2rtc; off also disconnects this container's adb) |
-| `GET/POST /screen`, `/camera`, `/sound`, `/mic` | per device: `?ip=` to read, `{"ip", "on"}` to set (each pair exclusive) |
+| `GET/POST /screen`, `/camera`, `/camera_back`, `/sound`, `/mic` | per device: `?ip=` to read, `{"ip", "on"}` to set (each group exclusive) |
 | `GET/POST /video`, `/audio` | older on/off switches: any video / any sound |
 | `GET /streams` | streams by device IP and their Vídeo switch, for ADB Control's viewer |
 | `GET /play?src=` | one stream's player page (no token) |

@@ -1,0 +1,18 @@
+# go2rtc config for Stream Control: copy to <data folder>/go2rtc.yaml, set a password and one line per device.
+# The streams start only while someone watches them (go2rtc runs stream.py on demand).
+api:
+  listen: ":1984"
+  username: stream
+  password: change-me
+rtsp:
+  listen: ":8554"
+  username: stream
+  password: change-me
+webrtc:
+  listen: ":8555"
+log:
+  exec: info
+streams:
+  # name: exec:python3 /opt/stream.py <device ip> {output}#killsignal=15#killtimeout=10
+  phone_a: exec:python3 /opt/stream.py 192.168.1.21 {output}#killsignal=15#killtimeout=10
+  tablet: exec:python3 /opt/stream.py 192.168.1.23 {output}#killsignal=15#killtimeout=10

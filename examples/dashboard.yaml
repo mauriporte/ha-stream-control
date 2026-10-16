@@ -1,0 +1,50 @@
+# Dashboard view (panel) for Stream Control: paste into a dashboard's raw configuration editor as a view.
+# The viewer is ADB Control's own page in stream mode (same layout rules; set its stream_url to this container),
+# so this view needs ADB Control. Replace 192.168.1.10 with the ADB Control host. The viewer is plain http, so it only
+# loads when Home Assistant itself is opened over http on the LAN.
+title: Stream
+path: stream
+icon: mdi:video-wireless
+type: panel
+cards:
+  - type: vertical-stack
+    cards:
+      - type: heading
+        heading: Stream Control
+        icon: mdi:video-wireless
+      - type: tile
+        entity: switch.stream_control
+        name: Stream Control
+        icon: mdi:cast-audio
+        features:
+          - type: toggle
+        tap_action: { action: toggle }
+      # one card per device, shown while Stream Control is on (repeat for each device)
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - type: conditional
+            conditions:
+              - condition: state
+                entity: switch.stream_control
+                state: "on"
+            card:
+              type: entities
+              title: Phone A
+              icon: mdi:cellphone
+              show_header_toggle: false
+              state_color: true
+              entities:
+                - entity: switch.stream_phone_a_video
+                  name: Vídeo
+                  icon: mdi:monitor-cellphone
+                - entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
+                  name: Horizontal
+                  icon: mdi:phone-rotate-landscape
+                - entity: switch.stream_phone_a_audio
+                  name: Audio
+                  icon: mdi:volume-high
+      - type: iframe
+        url: http://192.168.1.10:8002/view?mode=stream
+        aspect_ratio: 110%

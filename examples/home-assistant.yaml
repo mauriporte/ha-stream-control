@@ -1,0 +1,78 @@
+# Home Assistant configuration for Stream Control. Merge these blocks into configuration.yaml
+# (add the entries to your existing switch:/automation: lists if you already have them).
+# Replace 192.168.1.20 with the host running the container, and the device IPs with yours.
+# secrets.yaml must contain:  stream_control_token: <the same value as ADB_CONTROL_TOKEN in the container>
+
+switch:
+  # Main switch: starts or stops go2rtc. Off = nothing streams.
+  - platform: rest
+    name: Stream Control
+    unique_id: stream_control_master
+    icon: mdi:cast-audio
+    resource: http://192.168.1.20:8005/master
+    method: post
+    body_on: '{"on": true}'
+    body_off: '{"on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+    timeout: 30
+
+  # Per device (repeat for each one, changing name, unique_id and ip):
+  # video: the device is shown in the viewer (its stream only starts while someone watches it)
+  - platform: rest
+    name: Stream Phone A vídeo
+    unique_id: stream_phone_a_video
+    icon: mdi:video
+    resource: http://192.168.1.20:8005/video
+    state_resource: http://192.168.1.20:8005/video?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+  # audio: off sends silence instead of the device's sound, live (no restart)
+  - platform: rest
+    name: Stream Phone A audio
+    unique_id: stream_phone_a_audio
+    icon: mdi:volume-high
+    resource: http://192.168.1.20:8005/audio
+    state_resource: http://192.168.1.20:8005/audio?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
+
+# Optional, with ADB Control: when Stream Control is turned off it releases the devices; hand them back to
+# ADB Control (rest_command.adb_connect is in ADB Control's own example configuration).
+automation:
+  - alias: "Stream Control off: devices back to ADB Control"
+    triggers:
+      - trigger: state
+        entity_id: switch.stream_control
+        from: "on"
+        to: "off"
+    actions:
+      - repeat:
+          for_each: ["192.168.1.21", "192.168.1.23"]
+          sequence:
+            - action: rest_command.adb_connect
+              data:
+                ip: "{{ repeat.item }}"
+              continue_on_error: true
+      - delay: { seconds: 3 }
+      - action: homeassistant.update_entity
+        target:
+          entity_id: [sensor.adb_dispositivos_conectados, switch.adb_control]
+
+# Optional, for watching from outside your home network: a camera per device.
+# Settings → Devices & services → Add integration → Generic Camera:
+#   Stream source:  rtsp://stream:<password>@192.168.1.20:8554/phone_a
+#   RTSP transport: TCP,  Authentication: basic
+# Home Assistant then serves it over WebRTC (Opus audio) on the LAN and over HLS (AAC audio) from outside.

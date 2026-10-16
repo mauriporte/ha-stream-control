@@ -17,6 +17,8 @@ and the devices go back to ADB Control. It is meant for your own devices on your
     device leaves the viewer;
   - **Sonido / Micrófono:** the device's sound or its microphone (Android 11+); both off = silence, instantly;
   - **Horizontal:** ADB Control's own switch; the stream (screen or camera) is locked to that shape.
+  - **Girar cámara 180°:** turns the camera picture upside down. Front and rear cameras rotate in opposite
+    directions, so in a given placement one of them comes out flipped; turn this on for that device.
   - Changing the source or the shape restarts the stream by itself in about 3 s.
 - **Viewer:** ADB Control's viewer in stream mode, so the screens follow exactly the same layout rules, each one
   played over WebRTC with a sound button (browsers only autoplay muted video).
@@ -80,6 +82,7 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 
 | Request | Effect |
 |---|---|
+| `GET/POST /flip` | per device: camera picture turned 180° (`?ip=` to read, `{"ip", "on"}` to set; default off) |
 | `GET/POST /stream` | per device Stream Control: `?ip=` to read, `{"ip", "on"}` to set (default off) |
 | `GET/POST /master` | the whole service on/off (starts or stops go2rtc; off also disconnects this container's adb) |
 | `GET/POST /screen`, `/camera`, `/camera_back`, `/sound`, `/mic` | per device: `?ip=` to read, `{"ip", "on"}` to set (each group exclusive) |
@@ -93,6 +96,9 @@ Devices are prepared exactly as for ADB Control (ADB over Wi-Fi on port 5555; on
 
 - While the camera or the microphone is in use, Android shows its privacy indicator, and an app on the device that
   is already using the camera keeps the stream from opening it (and the other way round).
+- Emulators are detected (`ro.kernel.qemu`): their software encoder refuses the repeated SPS/PPS option, and the
+  sound is not duplicated on them (it would play on the computer). Apps with native ARM code (such as most camera
+  apps) usually do not work under an x86 emulator's ARM translation; use a real device for those.
 - Audio needs Android 11+; on older devices (and devices that accept only one adb host) leave them to ADB Control.
 - On its own the viewer is plain http, which an https Home Assistant page refuses: for remote use, open it through
   ADB Control's https address. WebRTC's media has no route in from outside, so remotely the player falls back to MSE

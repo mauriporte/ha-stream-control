@@ -95,6 +95,21 @@ switch:
     headers:
       X-Token: !secret stream_control_token
       Content-Type: application/json
+  # turn the camera picture 180° (front and rear cameras rotate in opposite directions, so in a given placement one
+  # of them comes out upside down; turn this on for that device)
+  - platform: rest
+    name: Stream Phone A flip
+    unique_id: stream_phone_a_flip
+    icon: mdi:rotate-3d-variant
+    resource: http://192.168.1.20:8005/flip
+    state_resource: http://192.168.1.20:8005/flip?ip=192.168.1.21
+    method: post
+    body_on: '{"ip": "192.168.1.21", "on": true}'
+    body_off: '{"ip": "192.168.1.21", "on": false}'
+    is_on_template: "{{ value_json.is_on }}"
+    headers:
+      X-Token: !secret stream_control_token
+      Content-Type: application/json
   # Android 11+
   - platform: rest
     name: Stream Phone A mic

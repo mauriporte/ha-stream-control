@@ -75,6 +75,15 @@ def audio_on() -> bool:
 CAMERAS = {"camera": "front", "camera_back": "back"}  # video source -> scrcpy camera_facing
 
 
+def flipped() -> bool:
+    """The device's "Girar 180°" switch (master.py): turn the camera picture upside down, for a camera that comes out
+    flipped in the way the device is placed (front and rear cameras rotate in opposite directions)."""
+    try:
+        return bool(json.load(open(PREFS)).get("flip", {}).get(IP, False))
+    except (OSError, ValueError):
+        return False
+
+
 def capture() -> tuple[str, bool]:
     """What scrcpy must capture: (camera facing, or "" for the screen; microphone instead of the device's sound).
     Off does not change it: no video only leaves the viewer, no audio is silence sent live."""
@@ -119,6 +128,7 @@ subprocess.run(["adb", "connect", SERIAL], capture_output=True, timeout=20)  # t
 subprocess.run(["adb", "-s", SERIAL, "wait-for-device"], capture_output=True, timeout=20)  # a fresh connection needs a moment
 sdk = int(adb("shell", "getprop", "ro.build.version.sdk") or 0)
 audio = sdk >= 30  # scrcpy captures audio on Android 11+ only
+emulator = adb("shell", "getprop", "ro.kernel.qemu") == "1"
 if adb("shell", "ls", "-l", JAR_REMOTE).split()[4:5] != [str(os.path.getsize(JAR_LOCAL))]:
     adb("push", JAR_LOCAL, JAR_REMOTE, timeout=120)
 scid = f"{random.randrange(1, 0x7FFFFFFF):08x}"
@@ -131,18 +141,25 @@ except (OSError, ValueError, KeyError):
 params = [f"scid={scid}", "log_level=warn", "tunnel_forward=true", "control=true", "cleanup=true",
           "raw_stream=true", "send_dummy_byte=true", f"audio={str(audio).lower()}", "audio_codec=raw",
           "max_size=1024", "video_bit_rate=4000000", "max_fps=30",
-          # viewers that join a running stream need a keyframe with SPS/PPS soon (scrcpy's default is every 10 s)
-          "video_codec_options=i-frame-interval:int=2,prepend-sps-pps-to-idr-frames:int=1"]
+          # viewers that join a running stream need a keyframe with SPS/PPS soon (scrcpy's default is every 10 s);
+          # the emulator's software encoder refuses prepend-sps-pps (MediaCodec error -1010)
+          "video_codec_options=i-frame-interval:int=2"
+          + ("" if emulator else ",prepend-sps-pps-to-idr-frames:int=1")]
 camera, mic = capture()  # camera = "front" / "back", or "" for the screen
+flip = flipped()
 if camera:
     params += ["video_source=camera", f"camera_facing={camera}"]  # Android 12+
 if mic:
     params.append("audio_source=mic")
-elif sdk >= 33:
-    params.append("audio_dup=true")  # keep the sound playing on the phone too (Android 13+)
+elif sdk >= 33 and not emulator:
+    params.append("audio_dup=true")  # keep the sound playing on the phone too (Android 13+; an emulator plays on the PC)
 if landscape is not None:
     shape = camera_orientation(landscape, camera) if camera else capture_orientation(landscape)
+    if camera and flip:
+        shape = str((int(shape) + 180) % 360)
     params.append(f"capture_orientation={shape}")
+elif camera and flip:
+    params.append("capture_orientation=180")
 server = subprocess.Popen(["adb", "-s", SERIAL, "shell",
                            f"CLASSPATH={JAR_REMOTE} app_process / com.genymobile.scrcpy.Server {SCRCPY_VERSION} "
                            + " ".join(params)])
@@ -226,7 +243,8 @@ def settings_watch() -> None:
     while True:
         time.sleep(3)
         try:
-            changed = capture() != (camera, mic) or (landscape is not None and want_landscape() != landscape)
+            changed = (capture() != (camera, mic) or (landscape is not None and want_landscape() != landscape)
+                       or (camera != "" and flipped() != flip))
         except (OSError, ValueError, KeyError):
             changed = False
         if changed:

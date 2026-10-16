@@ -59,7 +59,7 @@ def test_streams_and_login_come_from_the_go2rtc_config(tmp_path, monkeypatch):
 
 def test_prefs_default_to_on(tmp_path, monkeypatch):
     monkeypatch.setattr(master, "PREFS", str(tmp_path / "prefs.json"))
-    assert master.load_prefs() == {"audio": {}, "video": {}, "enabled": {}}
+    assert master.load_prefs() == {"audio": {}, "video": {}, "enabled": {}, "flip": {}}
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
@@ -126,3 +126,22 @@ def test_device_stream_switch(monkeypatch, tmp_path):
     calls.clear()
     master.set_enabled("192.168.1.21", False)  # the last one off: let go of it and stop the service
     assert calls == [("adb", "disconnect", "192.168.1.21:5555"), ("apply", False)]
+
+
+def test_flip_switch_turns_the_camera_180(tmp_path, monkeypatch):
+    monkeypatch.setattr(master, "PREFS", str(tmp_path / "prefs.json"))
+    assert master.load_prefs()["flip"] == {}  # off by default
+    ns = stream_functions("")
+    ns["IP"] = "192.168.1.21"
+    prefs = tmp_path / "prefs.json"
+    ns["PREFS"] = str(prefs)
+    assert ns["flipped"]() is False
+    prefs.write_text('{"flip": {"192.168.1.21": true}}')
+    assert ns["flipped"]() is True
+
+
+def test_emulator_skips_options_its_encoder_refuses():
+    src = (ROOT / "stream.py").read_text(encoding="utf8")
+    assert 'emulator = adb("shell", "getprop", "ro.kernel.qemu") == "1"' in src
+    assert '("" if emulator else ",prepend-sps-pps-to-idr-frames:int=1")' in src
+    assert "elif sdk >= 33 and not emulator:" in src  # no audio_dup: an emulator would play the sound on the PC

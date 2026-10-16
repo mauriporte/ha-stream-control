@@ -1,6 +1,6 @@
 # Master switch for the audio+video streams: starts or stops go2rtc (which in turn starts each phone's stream only
 # while someone watches it). Home Assistant REST switch: GET /master -> {"is_on"}, POST /master {"on": true|false}.
-# Per device: GET /stream?ip= (its Stream Control switch), /screen, /camera (front), /camera_back, /sound, /mic (and the older /video, /audio) -> {"is_on"};
+# Per device: GET /flip?ip= (camera picture turned 180°), /stream?ip= (its Stream Control switch), /screen, /camera (front), /camera_back, /sound, /mic (and the older /video, /audio) -> {"is_on"};
 # POST the same paths {"ip", "on"}.
 # GET /streams -> {"on", "streams": {ip: {"src", "video"}}} for the adb-control viewer (/view?mode=stream).
 # No token (LAN only, like the ADB viewer): GET /play?src= is one stream's player page, POST /webrtc?src= its
@@ -103,7 +103,8 @@ webrtc();
 
 def load_prefs() -> dict:
     prefs = json.load(open(PREFS)) if os.path.exists(PREFS) else {}
-    return {"audio": prefs.get("audio", {}), "video": prefs.get("video", {}), "enabled": prefs.get("enabled", {})}
+    return {"audio": prefs.get("audio", {}), "video": prefs.get("video", {}), "enabled": prefs.get("enabled", {}),
+            "flip": prefs.get("flip", {})}
 
 
 def save_prefs(prefs: dict) -> None:
@@ -233,13 +234,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, {"on": running(), "streams": {
                 ip: {"src": name, "video": enabled(prefs, ip) and source(prefs, "video", ip) != "off"}
                 for ip, name in streams().items()}})
-        if self.headers.get("X-Token") != TOKEN or url.path not in ("/master", "/stream", *PREF_KINDS):
+        if self.headers.get("X-Token") != TOKEN or url.path not in ("/master", "/stream", "/flip", *PREF_KINDS):
             return self._reply(403, {"error": "forbidden"})
         if url.path == "/master":
             return self._reply(200, {"is_on": running()})
         ip = (parse_qs(url.query).get("ip") or [""])[0]
         if url.path == "/stream":
             return self._reply(200, {"is_on": running() and enabled(load_prefs(), ip)})
+        if url.path == "/flip":
+            return self._reply(200, {"is_on": load_prefs()["flip"].get(ip, False)})
         self._reply(200, {"is_on": switch_state(load_prefs(), url.path, ip)})
 
     def do_POST(self):
@@ -256,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._reply(200, json.load(r))
             except (OSError, ValueError) as e:
                 return self._reply(502, {"error": str(e)})
-        if self.headers.get("X-Token") != TOKEN or self.path not in ("/master", "/stream", *PREF_KINDS):
+        if self.headers.get("X-Token") != TOKEN or self.path not in ("/master", "/stream", "/flip", *PREF_KINDS):
             return self._reply(403, {"error": "forbidden"})
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
@@ -268,6 +271,11 @@ class Handler(BaseHTTPRequestHandler):
         ip = str(body.get("ip") or "")
         if not IP_RE.match(ip):
             return self._reply(400, {"error": "ip must be an IPv4 address"})
+        if self.path == "/flip":  # turn the camera picture 180° (stream.py restarts the stream to apply it)
+            prefs = load_prefs()
+            prefs["flip"][ip] = bool(body.get("on"))
+            save_prefs(prefs)
+            return self._reply(200, {"is_on": prefs["flip"][ip]})
         if self.path == "/stream":
             set_enabled(ip, bool(body.get("on")))
             return self._reply(200, {"is_on": running() and enabled(load_prefs(), ip)})

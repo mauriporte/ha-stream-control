@@ -57,6 +57,14 @@ cards:
                   - entity: switch.stream_phone_a_control
                     state: "on"
                 row:
+                  entity: switch.stream_phone_a_flip
+                  name: Girar cámara 180°
+                  icon: mdi:rotate-3d-variant
+              - type: conditional
+                conditions:
+                  - entity: switch.stream_phone_a_control
+                    state: "on"
+                row:
                   entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
                   name: Horizontal
                   icon: mdi:phone-rotate-landscape

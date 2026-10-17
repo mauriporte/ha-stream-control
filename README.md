@@ -22,6 +22,8 @@ and the devices go back to ADB Control. It is meant for your own devices on your
   - Changing the source or the shape restarts the stream by itself in about 3 s.
 - **Viewer:** ADB Control's viewer in stream mode, so the screens follow exactly the same layout rules, each one
   played over WebRTC with a sound button (browsers only autoplay muted video).
+- **Dashboard:** one card per device with its name and, optionally, its battery level from the Home Assistant
+  companion app on the right, coloured by level ([`examples/dashboard.yaml`](examples/dashboard.yaml)).
 - From outside your home: through ADB Control's https address (see its README, *Remote access*), the player uses
   WebRTC when it can and otherwise MSE over a WebSocket, which goes through the tunnel.
 - Optionally, a Home Assistant camera per device.

@@ -1,89 +1,126 @@
-# Dashboard view (panel) for Stream Control: paste into a dashboard's raw configuration editor as a view.
+# Dashboard view for Stream Control: paste into a dashboard's raw configuration editor as a view.
 # The viewer is ADB Control's own page in stream mode (same layout rules; set its stream_url to this container),
 # so this view needs ADB Control. Replace 192.168.1.10 with the ADB Control host. The viewer is plain http, so it only
 # loads when Home Assistant itself is opened over http on the LAN; for remote access use ADB Control's https address,
 # e.g. https://streamcontrol.example.com/view?mode=stream&key=<key> (see ADB Control's README, Remote access).
+# One full-width section keeps this layout at any screen width and leaves a margin on both sides; for a thinner
+# margin, give the view a theme with e.g. `ha-view-sections-column-gap: 11px`.
 title: Stream
 path: stream
 icon: mdi:video-wireless
-type: panel
-cards:
-  - type: vertical-stack
+type: sections
+max_columns: 4
+sections:
+  - type: grid
+    column_span: 4
     cards:
-      - type: heading
-        heading: Stream Control
-        icon: mdi:video-wireless
-      # one card per device, always shown: its Stream Control switch on top, the rest only while it is on
-      # (repeat for each device)
-      - type: grid
-        columns: 3
-        square: false
+      - type: vertical-stack
+        grid_options:
+          columns: full
         cards:
-          - type: entities
-            title: Phone A
-            icon: mdi:cellphone
-            show_header_toggle: false
-            state_color: true
-            entities:
-              - entity: switch.stream_phone_a_control
-                name: Stream Control
-                icon: mdi:cast-audio
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_video
-                  name: Pantalla
-                  icon: mdi:monitor-cellphone
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_camera
-                  name: Cámara frontal
-                  icon: mdi:webcam
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_camera_back
-                  name: Cámara trasera
-                  icon: mdi:camera-rear
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_flip
-                  name: Girar cámara 180°
-                  icon: mdi:rotate-3d-variant
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
-                  name: Horizontal
-                  icon: mdi:phone-rotate-landscape
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_audio
-                  name: Sonido
-                  icon: mdi:volume-high
-              - type: conditional
-                conditions:
-                  - entity: switch.stream_phone_a_control
-                    state: "on"
-                row:
-                  entity: switch.stream_phone_a_mic
-                  name: Micrófono
-                  icon: mdi:microphone
-      - type: iframe
-        url: http://192.168.1.10:8002/view?mode=stream
-        aspect_ratio: 110%
+          - type: heading
+            heading: Stream Control
+            icon: mdi:video-wireless
+          # one card per device, always shown (repeat for each device): its name, with the battery on the right,
+          # above its Stream Control switch; the rest only while it is on
+          - type: grid
+            columns: 3
+            square: false
+            cards:
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Phone A
+                    icon: mdi:cellphone
+                    heading_style: title
+                    # optional: the battery from the Home Assistant companion app; one badge per colour, so the
+                    # colour follows the level (green 50 % or more, orange 20-49 %, red below 20 %)
+                    badges:
+                      - type: entity
+                        entity: sensor.phone_a_battery_level
+                        color: green
+                        visibility:
+                          - condition: numeric_state
+                            entity: sensor.phone_a_battery_level
+                            above: 49
+                      - type: entity
+                        entity: sensor.phone_a_battery_level
+                        color: orange
+                        visibility:
+                          - condition: numeric_state
+                            entity: sensor.phone_a_battery_level
+                            above: 19
+                            below: 50
+                      - type: entity
+                        entity: sensor.phone_a_battery_level
+                        color: red
+                        visibility:
+                          - condition: numeric_state
+                            entity: sensor.phone_a_battery_level
+                            below: 20
+                  - type: entities
+                    show_header_toggle: false
+                    state_color: true
+                    entities:
+                      - entity: switch.stream_phone_a_control
+                        name: Stream Control
+                        icon: mdi:cast-audio
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_video
+                          name: Pantalla
+                          icon: mdi:monitor-cellphone
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_camera
+                          name: Cámara frontal
+                          icon: mdi:webcam
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_camera_back
+                          name: Cámara trasera
+                          icon: mdi:camera-rear
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_flip
+                          name: Girar cámara 180°
+                          icon: mdi:rotate-3d-variant
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.phone_a_horizontal  # ADB Control's Horizontal switch: the stream follows it
+                          name: Horizontal
+                          icon: mdi:phone-rotate-landscape
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_audio
+                          name: Sonido
+                          icon: mdi:volume-high
+                      - type: conditional
+                        conditions:
+                          - entity: switch.stream_phone_a_control
+                            state: "on"
+                        row:
+                          entity: switch.stream_phone_a_mic
+                          name: Micrófono
+                          icon: mdi:microphone
+          - type: iframe
+            url: http://192.168.1.10:8002/view?mode=stream
+            aspect_ratio: 110%
